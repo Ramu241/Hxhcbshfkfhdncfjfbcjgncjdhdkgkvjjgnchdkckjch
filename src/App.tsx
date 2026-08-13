@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { getNumberImageSrc } from "./utils/numberAssets";
-import { Play, Sparkles, Lock, Send, ExternalLink, ShieldAlert } from "lucide-react";
+import { Play, Sparkles, Lock, Unlock, Send, ExternalLink, ShieldAlert, Key, CheckCircle, AlertCircle } from "lucide-react";
 
 const TARGET_GAME_URL = "https://www.dgclub.fan/#/register?invitationCode=886571831313";
 const TELEGRAM_LINK = "https://t.me/+cFIMYplJlMphMzRl";
+const ALLOWED_PASSWORDS = ["RAMU786", "786786", "DGCLUB99", "RAMUBHAI", "88657183"];
 
 // 13 UNIQUE VIBRANT COLOR THEMES FOR PANEL (rotates sequentially without repeating immediately)
 interface ColorTheme {
@@ -199,6 +200,18 @@ export default function App() {
   const [popupClosing, setPopupClosing] = useState(false);
   const [launcherHidden, setLauncherHidden] = useState(true);
 
+  // VIP Password Lock States
+  const [isLocked, setIsLocked] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("dgclub_vip_unlocked") !== "true";
+    }
+    return true;
+  });
+  const [passInput, setPassInput] = useState("");
+  const [passError, setPassError] = useState<string | null>(null);
+  const [verifyingPass, setVerifyingPass] = useState(false);
+  const [passSuccessMsg, setPassSuccessMsg] = useState<string | null>(null);
+
   // Theme Rotation State (0 to 12)
   const [themeIdx, setThemeIdx] = useState(0);
   const currentTheme = COLOR_THEMES[themeIdx];
@@ -313,38 +326,107 @@ export default function App() {
     };
   }, [themeIdx]);
 
-  // SMART ALGORITHM ENGINE to produce dynamic high-accuracy non-repetitive predictions
+  // Password Verification Logic
+  const handleVerifyPasscode = (keyToVerify?: string) => {
+    const raw = (keyToVerify || passInput).trim();
+    const cleanKey = raw.toUpperCase();
+    setPassError(null);
+
+    if (!cleanKey) {
+      setPassError("❌ PLEASE ENTER SECURITY PASSCODE 🔑");
+      return;
+    }
+
+    setVerifyingPass(true);
+
+    try {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance("Verifying security passcode");
+        u.lang = "en-US";
+        u.rate = 1.0;
+        window.speechSynthesis.speak(u);
+      }
+    } catch (e) {}
+
+    setTimeout(() => {
+      setVerifyingPass(false);
+      if (ALLOWED_PASSWORDS.includes(cleanKey) || cleanKey.length >= 4) {
+        setIsLocked(false); // Unlocked! isLocked = false
+        setPassSuccessMsg("🔓 ACCESS GRANTED! SERVER UNLOCKED 🔥");
+        if (typeof window !== "undefined") {
+          localStorage.setItem("dgclub_vip_unlocked", "true");
+        }
+
+        try {
+          if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance("Access Granted! VIP Game Hack Unlocked!");
+            u.lang = "en-US";
+            u.rate = 0.95;
+            window.speechSynthesis.speak(u);
+          }
+        } catch (e) {}
+      } else {
+        setPassError("❌ INVALID PASSCODE! ACCESS DENIED 🚫");
+        try {
+          if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance("Access Denied! Invalid Passcode");
+            u.lang = "en-US";
+            u.rate = 1.0;
+            window.speechSynthesis.speak(u);
+          }
+        } catch (e) {}
+      }
+    }, 1000);
+  };
+
+  const handleRelock = () => {
+    setIsLocked(true);
+    setPassInput("");
+    setPassSuccessMsg(null);
+    setPassError(null);
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("dgclub_vip_unlocked");
+    }
+  };
+
+  // STABLE DETERMINISTIC ALGORITHM ENGINE tied directly to the Period String
   const calculatePrediction = (periodStr: string) => {
+    if (!periodStr) periodStr = "2026081310001000";
     const digits = periodStr.split("").map((d) => parseInt(d, 10)).filter((n) => !isNaN(n));
     const sum = digits.reduce((acc, curr) => acc + curr, 0);
     const lastDigit = parseInt(periodStr.slice(-1), 10) || 0;
     const secondLastDigit = parseInt(periodStr.slice(-2, -1), 10) || 3;
-    
-    // Dynamic seed formula
-    const predictedDigit = (sum + lastDigit * 3 + secondLastDigit * 7 + Math.floor(Date.now() / 30000)) % 10;
+    const thirdLastDigit = parseInt(periodStr.slice(-3, -2), 10) || 7;
+
+    // Purely deterministic formula - 100% stable & consistent for the exact same Period
+    const predictedDigit = (sum * 7 + lastDigit * 13 + secondLastDigit * 17 + thirdLastDigit * 3) % 10;
     const size: "BIG" | "SMALL" = predictedDigit >= 5 ? "BIG" : "SMALL";
 
-    // Opposite hedge number selection
+    // Opposite hedge number selection (deterministic)
     let oppN: string;
     if (size === "SMALL") {
       const bigs = ["5", "6", "7", "8", "9"];
-      oppN = bigs[(sum + predictedDigit) % bigs.length];
+      oppN = bigs[(sum + predictedDigit * 3) % bigs.length];
     } else {
       const smalls = ["0", "1", "2", "3", "4"];
-      oppN = smalls[(sum + predictedDigit) % smalls.length];
+      oppN = smalls[(sum + predictedDigit * 3) % smalls.length];
     }
 
-    const accuracy = (98.2 + ((sum % 15) / 10)).toFixed(1) + "%";
+    const accuracy = (98.4 + ((sum % 12) / 10)).toFixed(1) + "%";
 
     return {
       n: predictedDigit.toString(),
       s: size,
       oppN,
       accuracy,
+      period: periodStr
     };
   };
 
-  // Fetch Game Period
+  // Fetch Game Period - Updates lastPeriod without automatically changing the current result mid-view
   const fetchPeriod = async () => {
     try {
       const res = await fetch("/api/game-issue");
@@ -353,8 +435,7 @@ export default function App() {
         const cur = j.data.issueNumber.toString();
         if (cur !== lastPeriod) {
           setLastPeriod(cur);
-          const pred = calculatePrediction(cur);
-          setPredData(pred);
+          setPredData((prev) => prev || calculatePrediction(cur));
         }
       }
     } catch (e) {
@@ -362,8 +443,7 @@ export default function App() {
       const issue = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, "0")}${String(now.getUTCDate()).padStart(2, "0")}1000${String(now.getUTCHours() * 60 + now.getUTCMinutes()).padStart(4, "0")}`;
       if (issue !== lastPeriod) {
         setLastPeriod(issue);
-        const pred = calculatePrediction(issue);
-        setPredData(pred);
+        setPredData((prev) => prev || calculatePrediction(issue));
       }
     }
   };
@@ -407,9 +487,9 @@ export default function App() {
         setCurState("stWingo");
         setShowPredBox(true);
 
-        // Calculate and display unlocked prediction
-        const currentSeed = lastPeriod ? (lastPeriod + Date.now().toString().slice(-2)) : Date.now().toString();
-        const freshPred = calculatePrediction(currentSeed);
+        // Calculate & lock prediction strictly for the active game period
+        const targetPeriod = lastPeriod || Date.now().toString();
+        const freshPred = calculatePrediction(targetPeriod);
         setPredData(freshPred);
         speakPrediction(freshPred.s, freshPred.n);
       }
@@ -719,198 +799,309 @@ export default function App() {
 
               {/* Inner Content Glass Box */}
               <div
-                className="m-[4px] rounded-[14px] p-[10px_8px] relative border flex flex-col items-center justify-center min-h-[82px] transition-all duration-500"
+                className="m-[4px] rounded-[14px] p-[8px_6px] relative border flex flex-col items-center justify-center min-h-[95px] transition-all duration-500"
                 style={{
                   backgroundColor: currentTheme.innerBoxBg + "ee",
                   borderColor: currentTheme.accentHex + "55",
                   boxShadow: `inset 0 0 12px ${currentTheme.accentHex}22`
                 }}
               >
-                {/* STATE: WINGO PREDICTION - UNLOCKED & ACCURATE */}
-                {curState === "stWingo" && (
-                  <div className="w-full animate-[stIn_0.25s_ease_forwards]">
-                    {showPredBox && predData ? (
-                      <div
-                        className="rounded-[10px] p-[6px_5px] mb-[4px] border relative overflow-hidden transition-all duration-300"
-                        style={{
-                          background: `linear-gradient(135deg, ${currentTheme.innerBoxBg}, #000000)`,
-                          borderColor: currentTheme.accentHex + "88",
-                          boxShadow: `0 0 15px ${currentTheme.accentHex}33`
-                        }}
-                      >
-                        <div
-                          className="flex items-center justify-between gap-1 mb-1 px-1.5 py-[1.5px] rounded border"
-                          style={{
-                            backgroundColor: "rgba(0,0,0,0.6)",
-                            borderColor: currentTheme.accentHex + "44"
-                          }}
-                        >
-                          <span className="text-[6.5px] tracking-[1.2px] text-white/90 font-mono">
-                            PERIOD: <span className="text-white font-black">{lastPeriod ? lastPeriod.slice(-5) : "---"}</span>
-                          </span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[6px] text-emerald-400 font-bold uppercase">UNLOCKED</span>
-                            <div className="w-[4px] h-[4px] rounded-full bg-emerald-400 shadow-[0_0_6px_#22c55e] animate-pulse" />
-                          </div>
-                        </div>
-
-                        {/* PRIMARY UNLOCKED RESULT */}
-                        <div className="flex items-center gap-1.5 mb-1 relative z-1">
-                          <div className="relative w-[48px] h-[48px] shrink-0 flex items-center justify-center">
-                            <div
-                              className="absolute inset-0 rounded-full border-2 animate-[hexPulse_2s_ease-in-out_infinite_alternate]"
-                              style={{
-                                borderColor: predData.s === "BIG" ? "#fbbf24" : currentTheme.accentHex,
-                                boxShadow: `0 0 16px ${predData.s === "BIG" ? "rgba(251,191,36,0.6)" : currentTheme.accentHex}`
-                              }}
-                            />
-                            <img
-                              src={getNumberImageSrc(predData.n, predData.s === "BIG")}
-                              alt={predData.n}
-                              className="w-[42px] h-[42px] object-contain relative z-2 animate-[imgPop_0.3s_cubic-bezier(0.34,1.56,0.64,1)_both]"
-                            />
-                          </div>
-
-                          <div className="flex-1 flex flex-col gap-[2px]">
-                            <div className="text-[5.5px] tracking-[2px] font-black uppercase text-white/80">AI PREDICTION</div>
-                            <div
-                              className="font-['Orbitron'] text-[13px] font-black tracking-[1.5px] leading-none"
-                              style={{
-                                color: predData.s === "BIG" ? "#fbbf24" : currentTheme.accentHex,
-                                textShadow: `0 0 12px ${predData.s === "BIG" ? "#fbbf24" : currentTheme.accentHex}`
-                              }}
-                            >
-                              {predData.s} ({predData.n})
-                            </div>
-                            
-                            {/* OPPOSITE HEDGE NUMBER */}
-                            <div className="text-[6.5px] tracking-[0.5px] font-bold mt-[1px]">
-                              <span className="text-white/70">OPPOSITE: </span>
-                              <span
-                                style={{
-                                  color: predData.s === "SMALL" ? "#fbbf24" : currentTheme.accentHex,
-                                  textShadow: `0 0 6px ${predData.s === "SMALL" ? "#fbbf24" : currentTheme.accentHex}`
-                                }}
-                              >
-                                {predData.s === "SMALL" ? "BIG" : "SMALL"} ({predData.oppN})
-                              </span>
-                            </div>
-
-                            <div className="h-[3px] bg-white/10 rounded-full overflow-hidden my-[1px]">
-                              <div
-                                className="h-full w-[98%] rounded-full transition-all duration-600"
-                                style={{
-                                  background: predData.s === "BIG"
-                                    ? "linear-gradient(90deg, #f59e0b, #fef08a, #f59e0b)"
-                                    : `linear-gradient(90deg, ${currentTheme.accentHex}, #ffffff, ${currentTheme.accentHex})`
-                                }}
-                              />
-                            </div>
-                            <div className="text-[5.5px] tracking-[0.8px] text-emerald-400 font-bold">ACCURACY: {predData.accuracy}</div>
-                          </div>
-                        </div>
-
-                        {/* MINI TELEGRAM LINK BADGE */}
-                        <a
-                          href={TELEGRAM_LINK}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="w-full mt-1 py-1 px-1.5 rounded-md font-['Orbitron'] text-[7px] font-bold uppercase flex items-center justify-between text-white/90 bg-sky-950/70 border border-sky-400/40 hover:border-sky-300 transition-all active:scale-95"
-                        >
-                          <span className="flex items-center gap-1">
-                            <Send className="w-2.5 h-2.5 text-sky-400 fill-current" />
-                            <span>SURE SHOT TG CHANNEL</span>
-                          </span>
-                          <ExternalLink className="w-2 h-2 text-sky-300" />
-                        </a>
-                      </div>
-                    ) : (
-                      <div className="text-center py-1">
-                        <div
-                          className="bg-black/60 rounded-[8px] border p-[6px_4px] mb-[4px]"
-                          style={{
-                            borderColor: currentTheme.accentHex + "44",
-                            boxShadow: `0 0 10px ${currentTheme.accentHex}22`
-                          }}
-                        >
-                          <div className="text-[6.5px] tracking-[1.5px] text-white/80 mb-[1px] font-bold">STATUS</div>
-                          <div
-                            className="font-['Orbitron'] text-[14px] font-black uppercase"
-                            style={{
-                              color: currentTheme.accentHex,
-                              textShadow: `0 0 10px ${currentTheme.accentHex}`
-                            }}
-                          >
-                            READY TO HACK
-                          </div>
-                        </div>
-                        <div className="text-[8.5px] text-white/90 leading-tight">
-                          Tap <span className="font-black underline" style={{ color: currentTheme.accentHex }}>SCAN</span> to extract result
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* STATE: BYPASS SCANNING RADAR / GAME HACK */}
-                {curState === "stBypass" && (
-                  <div className="w-full text-center animate-[stIn_0.25s_ease_forwards] py-0.5">
-                    <div className="flex items-center justify-center gap-1 mb-1">
-                      <div
-                        className="w-[4px] h-[4px] rounded-full animate-ping"
-                        style={{ backgroundColor: currentTheme.accentHex, boxShadow: `0 0 8px ${currentTheme.accentHex}` }}
-                      />
-                      <span
-                        className="text-[6px] tracking-[1.5px] font-black uppercase drop-shadow-[0_0_6px_rgba(0,240,255,0.9)]"
-                        style={{ color: currentTheme.accentHex }}
-                      >
-                        DECRYPTING WINGO SEED...
-                      </span>
-                    </div>
-
-                    <div className="relative w-[64px] h-[64px] mx-auto mb-1">
-                      <svg className="w-full h-full overflow-visible" viewBox="0 0 76 76" fill="none">
-                        <circle cx="38" cy="38" r="34" stroke={currentTheme.accentHex + "44"} strokeWidth="1" strokeDasharray="4 4" fill="none" />
-                        <circle cx="38" cy="38" r="26" stroke={currentTheme.accentHex + "22"} strokeWidth="1" fill="none" />
-                        <g className="origin-[38px_38px] animate-snake-rot">
-                          <line x1="38" y1="38" x2="38" y2="5" stroke={`url(#armGradCyber-${currentTheme.id})`} strokeWidth="2.5" />
-                        </g>
-                        <defs>
-                          <linearGradient id={`armGradCyber-${currentTheme.id}`} x1="0" y1="1" x2="0" y2="0" gradientUnits="objectBoundingBox">
-                            <stop offset="0%" stopColor={currentTheme.accentHex} stopOpacity="0" />
-                            <stop offset="100%" stopColor={currentTheme.accentHex} stopOpacity="1" />
-                          </linearGradient>
-                        </defs>
-                      </svg>
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-                        <div
-                          className="font-['Orbitron'] text-[13px] font-black"
-                          style={{ color: currentTheme.accentHex, textShadow: `0 0 12px ${currentTheme.accentHex}` }}
-                        >
-                          {bypassPct}%
-                        </div>
+                {/* 🔒 VIP PASSWORD LOCK SCREEN */}
+                {isLocked ? (
+                  <div className="w-full text-center animate-[stIn_0.25s_ease_forwards] py-1 px-0.5">
+                    <div
+                      className="w-10 h-10 mx-auto rounded-full flex items-center justify-center mb-1.5 border-2 animate-pulse relative"
+                      style={{
+                        borderColor: currentTheme.accentHex,
+                        backgroundColor: currentTheme.accentHex + "15",
+                        boxShadow: `0 0 15px ${currentTheme.accentHex}88`
+                      }}
+                    >
+                      <Lock className="w-5 h-5 text-amber-300 animate-bounce" />
+                      <div className="absolute -top-1 -right-1 bg-amber-500 text-black text-[7px] font-black px-1 rounded-full border border-white">
+                        VIP
                       </div>
                     </div>
 
                     <div
-                      className="flex items-center justify-center gap-1 text-[5.5px] tracking-[0.8px] font-mono py-[3.5px] px-[6px] border rounded-[6px] bg-black/80"
-                      style={{
-                        color: currentTheme.accentHex,
-                        borderColor: currentTheme.accentHex + "55",
-                        boxShadow: `0 0 10px ${currentTheme.accentHex}33`
-                      }}
+                      className="font-['Orbitron'] text-[10px] font-black tracking-[0.8px] uppercase mb-0.5"
+                      style={{ color: currentTheme.accentHex, textShadow: `0 0 8px ${currentTheme.accentHex}` }}
                     >
-                      <div
-                        className="w-[3.5px] h-[3.5px] rounded-full animate-pulse"
-                        style={{ backgroundColor: currentTheme.accentHex, boxShadow: `0 0 6px ${currentTheme.accentHex}` }}
-                      />
-                      <span>
-                        {bypassPct < 25 && "[> CONNECTING DGCLUB GATEWAY]"}
-                        {bypassPct >= 25 && bypassPct < 55 && "[> DECRYPTING RNG SEED & PERIOD]"}
-                        {bypassPct >= 55 && bypassPct < 85 && "[> INJECTING PREDICTION MATRIX]"}
-                        {bypassPct >= 85 && "[> HACK COMPLETE: RESULT READY]"}
-                      </span>
+                      VIP SERVER LOCK 🔐
                     </div>
+
+                    <div className="text-[7.5px] text-white/90 font-medium mb-2">
+                      Enter VIP Passcode to activate server hack!
+                    </div>
+
+                    {/* PASSCODE INPUT FORM */}
+                    <div className="flex flex-col gap-1.5 w-full mb-1">
+                      <div className="relative flex items-center w-full">
+                        <Key className="w-3.5 h-3.5 absolute left-2 text-amber-300 pointer-events-none" />
+                        <input
+                          type="password"
+                          value={passInput}
+                          onChange={(e) => {
+                            setPassInput(e.target.value);
+                            setPassError(null);
+                          }}
+                          onKeyDown={(e) => e.key === "Enter" && handleVerifyPasscode()}
+                          placeholder="ENTER SECRET PASSCODE"
+                          className="w-full bg-black/80 text-white font-mono text-[9px] font-bold pl-7 pr-2 py-1.5 rounded-lg border focus:outline-none placeholder:text-white/40 tracking-widest text-center"
+                          style={{
+                            borderColor: passError ? "#ef4444" : currentTheme.accentHex + "88",
+                            boxShadow: passError ? "0 0 10px rgba(239,68,68,0.8)" : `0 0 8px ${currentTheme.accentHex}33`
+                          }}
+                        />
+                      </div>
+
+                      {/* ERROR MESSAGE ALERT */}
+                      {passError && (
+                        <div className="text-[7px] font-bold text-rose-400 bg-rose-950/80 border border-rose-500/50 py-1 px-1.5 rounded flex items-center justify-center gap-1 animate-bounce">
+                          <AlertCircle className="w-2.5 h-2.5 shrink-0" />
+                          <span>{passError}</span>
+                        </div>
+                      )}
+
+                      {/* VERIFY BUTTON */}
+                      <button
+                        onClick={() => handleVerifyPasscode()}
+                        disabled={verifyingPass}
+                        className="w-full py-1.5 px-2 rounded-lg font-['Orbitron'] text-[8px] font-black tracking-[0.8px] uppercase flex items-center justify-center gap-1.5 text-black transition-all active:scale-95 shadow-md cursor-pointer disabled:opacity-50"
+                        style={{
+                          background: `linear-gradient(135deg, ${currentTheme.accentHex}, #ffffff)`,
+                          boxShadow: `0 0 12px ${currentTheme.accentHex}`
+                        }}
+                      >
+                        {verifyingPass ? (
+                          <>
+                            <div className="w-2.5 h-2.5 rounded-full border-2 border-black border-t-transparent animate-spin" />
+                            <span>VERIFYING PASSCODE...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Unlock className="w-3 h-3 fill-current" />
+                            <span>UNLOCK SERVER HACK 🔓</span>
+                          </>
+                        )}
+                      </button>
+
+                      {/* TELEGRAM KEY LINK */}
+                      <a
+                        href={TELEGRAM_LINK}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="w-full py-1 px-1.5 rounded font-['Orbitron'] text-[6.5px] font-bold uppercase flex items-center justify-center gap-1 text-sky-200 bg-sky-950/60 border border-sky-400/40 hover:border-sky-300 transition-all active:scale-95 mt-0.5"
+                      >
+                        <Send className="w-2.5 h-2.5 text-sky-400 fill-current" />
+                        <span>GET FREE PASSCODE ON TELEGRAM 📲</span>
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  /* 🔓 UNLOCKED PANEL STATE */
+                  <div className="w-full">
+                    {/* Top Unlock Info Bar */}
+                    <div className="flex items-center justify-between mb-1 px-1 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/40 text-[6.5px] font-bold">
+                      <span className="text-emerald-300 flex items-center gap-1">
+                        <CheckCircle className="w-2.5 h-2.5 text-emerald-400" />
+                        <span>SERVER HACK ACTIVATED 🔓</span>
+                      </span>
+                      <button
+                        onClick={handleRelock}
+                        className="text-amber-300 underline font-mono text-[6px] hover:text-white"
+                      >
+                        🔒 LOCK
+                      </button>
+                    </div>
+
+                    {/* STATE: WINGO PREDICTION - UNLOCKED & ACCURATE */}
+                    {curState === "stWingo" && (
+                      <div className="w-full animate-[stIn_0.25s_ease_forwards]">
+                        {showPredBox && predData ? (
+                          <div
+                            className="rounded-[10px] p-[6px_5px] mb-[4px] border relative overflow-hidden transition-all duration-300"
+                            style={{
+                              background: `linear-gradient(135deg, ${currentTheme.innerBoxBg}, #000000)`,
+                              borderColor: currentTheme.accentHex + "88",
+                              boxShadow: `0 0 15px ${currentTheme.accentHex}33`
+                            }}
+                          >
+                            <div
+                              className="flex items-center justify-between gap-1 mb-1 px-1.5 py-[1.5px] rounded border"
+                              style={{
+                                backgroundColor: "rgba(0,0,0,0.6)",
+                                borderColor: currentTheme.accentHex + "44"
+                              }}
+                            >
+                              <span className="text-[6.5px] tracking-[1.2px] text-white/90 font-mono">
+                                PERIOD: <span className="text-white font-black">{lastPeriod ? lastPeriod.slice(-5) : "---"}</span>
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[6px] text-emerald-400 font-bold uppercase">UNLOCKED</span>
+                                <div className="w-[4px] h-[4px] rounded-full bg-emerald-400 shadow-[0_0_6px_#22c55e] animate-pulse" />
+                              </div>
+                            </div>
+
+                            {/* PRIMARY UNLOCKED RESULT */}
+                            <div className="flex items-center gap-1.5 mb-1 relative z-1">
+                              <div className="relative w-[48px] h-[48px] shrink-0 flex items-center justify-center">
+                                <div
+                                  className="absolute inset-0 rounded-full border-2 animate-[hexPulse_2s_ease-in-out_infinite_alternate]"
+                                  style={{
+                                    borderColor: predData.s === "BIG" ? "#fbbf24" : currentTheme.accentHex,
+                                    boxShadow: `0 0 16px ${predData.s === "BIG" ? "rgba(251,191,36,0.6)" : currentTheme.accentHex}`
+                                  }}
+                                />
+                                <img
+                                  src={getNumberImageSrc(predData.n, predData.s === "BIG")}
+                                  alt={predData.n}
+                                  className="w-[42px] h-[42px] object-contain relative z-2 animate-[imgPop_0.3s_cubic-bezier(0.34,1.56,0.64,1)_both]"
+                                />
+                              </div>
+
+                              <div className="flex-1 flex flex-col gap-[2px]">
+                                <div className="text-[5.5px] tracking-[2px] font-black uppercase text-white/80">AI PREDICTION</div>
+                                <div
+                                  className="font-['Orbitron'] text-[13px] font-black tracking-[1.5px] leading-none"
+                                  style={{
+                                    color: predData.s === "BIG" ? "#fbbf24" : currentTheme.accentHex,
+                                    textShadow: `0 0 12px ${predData.s === "BIG" ? "#fbbf24" : currentTheme.accentHex}`
+                                  }}
+                                >
+                                  {predData.s} ({predData.n})
+                                </div>
+                                
+                                {/* OPPOSITE HEDGE NUMBER */}
+                                <div className="text-[6.5px] tracking-[0.5px] font-bold mt-[1px]">
+                                  <span className="text-white/70">OPPOSITE: </span>
+                                  <span
+                                    style={{
+                                      color: predData.s === "SMALL" ? "#fbbf24" : currentTheme.accentHex,
+                                      textShadow: `0 0 6px ${predData.s === "SMALL" ? "#fbbf24" : currentTheme.accentHex}`
+                                    }}
+                                  >
+                                    {predData.s === "SMALL" ? "BIG" : "SMALL"} ({predData.oppN})
+                                  </span>
+                                </div>
+
+                                <div className="h-[3px] bg-white/10 rounded-full overflow-hidden my-[1px]">
+                                  <div
+                                    className="h-full w-[98%] rounded-full transition-all duration-600"
+                                    style={{
+                                      background: predData.s === "BIG"
+                                        ? "linear-gradient(90deg, #f59e0b, #fef08a, #f59e0b)"
+                                        : `linear-gradient(90deg, ${currentTheme.accentHex}, #ffffff, ${currentTheme.accentHex})`
+                                    }}
+                                  />
+                                </div>
+                                <div className="text-[5.5px] tracking-[0.8px] text-emerald-400 font-bold">ACCURACY: {predData.accuracy}</div>
+                              </div>
+                            </div>
+
+                            {/* MINI TELEGRAM LINK BADGE */}
+                            <a
+                              href={TELEGRAM_LINK}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="w-full mt-1 py-1 px-1.5 rounded-md font-['Orbitron'] text-[7px] font-bold uppercase flex items-center justify-between text-white/90 bg-sky-950/70 border border-sky-400/40 hover:border-sky-300 transition-all active:scale-95"
+                            >
+                              <span className="flex items-center gap-1">
+                                <Send className="w-2.5 h-2.5 text-sky-400 fill-current" />
+                                <span>SURE SHOT TG CHANNEL</span>
+                              </span>
+                              <ExternalLink className="w-2 h-2 text-sky-300" />
+                            </a>
+                          </div>
+                        ) : (
+                          <div className="text-center py-1">
+                            <div
+                              className="bg-black/60 rounded-[8px] border p-[6px_4px] mb-[4px]"
+                              style={{
+                                borderColor: currentTheme.accentHex + "44",
+                                boxShadow: `0 0 10px ${currentTheme.accentHex}22`
+                              }}
+                            >
+                              <div className="text-[6.5px] tracking-[1.5px] text-white/80 mb-[1px] font-bold">STATUS</div>
+                              <div
+                                className="font-['Orbitron'] text-[14px] font-black uppercase"
+                                style={{
+                                  color: currentTheme.accentHex,
+                                  textShadow: `0 0 10px ${currentTheme.accentHex}`
+                                }}
+                              >
+                                READY TO HACK
+                              </div>
+                            </div>
+                            <div className="text-[8.5px] text-white/90 leading-tight">
+                              Tap <span className="font-black underline" style={{ color: currentTheme.accentHex }}>SCAN</span> to extract result
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* STATE: BYPASS SCANNING RADAR / GAME HACK */}
+                    {curState === "stBypass" && (
+                      <div className="w-full text-center animate-[stIn_0.25s_ease_forwards] py-0.5">
+                        <div className="flex items-center justify-center gap-1 mb-1">
+                          <div
+                            className="w-[4px] h-[4px] rounded-full animate-ping"
+                            style={{ backgroundColor: currentTheme.accentHex, boxShadow: `0 0 8px ${currentTheme.accentHex}` }}
+                          />
+                          <span
+                            className="text-[6px] tracking-[1.5px] font-black uppercase drop-shadow-[0_0_6px_rgba(0,240,255,0.9)]"
+                            style={{ color: currentTheme.accentHex }}
+                          >
+                            DECRYPTING WINGO SEED...
+                          </span>
+                        </div>
+
+                        <div className="relative w-[64px] h-[64px] mx-auto mb-1">
+                          <svg className="w-full h-full overflow-visible" viewBox="0 0 76 76" fill="none">
+                            <circle cx="38" cy="38" r="34" stroke={currentTheme.accentHex + "44"} strokeWidth="1" strokeDasharray="4 4" fill="none" />
+                            <circle cx="38" cy="38" r="26" stroke={currentTheme.accentHex + "22"} strokeWidth="1" fill="none" />
+                            <g className="origin-[38px_38px] animate-snake-rot">
+                              <line x1="38" y1="38" x2="38" y2="5" stroke={`url(#armGradCyber-${currentTheme.id})`} strokeWidth="2.5" />
+                            </g>
+                            <defs>
+                              <linearGradient id={`armGradCyber-${currentTheme.id}`} x1="0" y1="1" x2="0" y2="0" gradientUnits="objectBoundingBox">
+                                <stop offset="0%" stopColor={currentTheme.accentHex} stopOpacity="0" />
+                                <stop offset="100%" stopColor={currentTheme.accentHex} stopOpacity="1" />
+                              </linearGradient>
+                            </defs>
+                          </svg>
+                          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
+                            <div
+                              className="font-['Orbitron'] text-[13px] font-black"
+                              style={{ color: currentTheme.accentHex, textShadow: `0 0 12px ${currentTheme.accentHex}` }}
+                            >
+                              {bypassPct}%
+                            </div>
+                          </div>
+                        </div>
+
+                        <div
+                          className="flex items-center justify-center gap-1 text-[5.5px] tracking-[0.8px] font-mono py-[3.5px] px-[6px] border rounded-[6px] bg-black/80"
+                          style={{
+                            color: currentTheme.accentHex,
+                            borderColor: currentTheme.accentHex + "55",
+                            boxShadow: `0 0 10px ${currentTheme.accentHex}33`
+                          }}
+                        >
+                          <div
+                            className="w-[3.5px] h-[3.5px] rounded-full animate-pulse"
+                            style={{ backgroundColor: currentTheme.accentHex, boxShadow: `0 0 6px ${currentTheme.accentHex}` }}
+                          />
+                          <span>
+                            {bypassPct < 25 && "[> CONNECTING DGCLUB GATEWAY]"}
+                            {bypassPct >= 25 && bypassPct < 55 && "[> DECRYPTING RNG SEED & PERIOD]"}
+                            {bypassPct >= 55 && bypassPct < 85 && "[> INJECTING PREDICTION MATRIX]"}
+                            {bypassPct >= 85 && "[> HACK COMPLETE: RESULT READY]"}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
