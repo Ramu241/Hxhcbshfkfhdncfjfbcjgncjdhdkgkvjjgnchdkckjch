@@ -1,0 +1,6 @@
+{
+  "name": "DGClub Wingo Game & Predictor Panel",
+  "description": "Full screen DGClub Wingo game page with floating number hack predictor panel overlay",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
